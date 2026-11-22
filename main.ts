@@ -28,9 +28,14 @@ const DIRS = [
 ] as const;
 
 /** States one room's search may expand; a room is never kept unless a search this size solves it. */
-const ROOM_STATES = 400_000;
-/** States one whole level's search may expand when the level does not split into rooms. */
-const LEVEL_STATES = 600_000;
+const ROOM_STATES = 150_000;
+/** States one level may expand, and the whole set of five. */
+const INSTANCE_STATES = 200_000;
+const SET_STATES = 500_000;
+/** States expanded so far in this run. Work is counted, never timed, so two runs answer alike; the
+ *  caps exist so one runaway level can never eat the 60 s wall and time out the other four. */
+let work = 0;
+let instanceCap = INSTANCE_STATES;
 
 interface Level {
   w: number;
@@ -221,7 +226,7 @@ function solvePushOptimal(level: Level, maxStates: number): { pushes: number; mo
         blocked[to] = 0;
         blocked[b] = 1;
         if (stuck || next === null || index.has(key)) continue;
-        if (boxes.length >= maxStates) return null;
+        if (boxes.length >= maxStates || ++work > instanceCap || work > SET_STATES) return null;
         index.set(key, boxes.length);
         boxes.push(next);
         froms.push(b);
@@ -357,6 +362,7 @@ function solveByRooms(level: Level, rooms: NonNullable<ReturnType<typeof roomsOf
 
 /** The level's solution: room by room when it splits into rooms, else one search over the level. */
 function solve(text: string): string {
+  instanceCap = work + INSTANCE_STATES;
   const level = parseLevel(text);
   if (level.player < 0 || level.boxes.length === 0) return '';
   const rooms = roomsOf(level);
@@ -364,7 +370,10 @@ function solve(text: string): string {
     const solved = solveByRooms(level, rooms);
     if (solved !== null) return solved.moves;
   }
-  const whole = solvePushOptimal(level, LEVEL_STATES);
+  // A level of more than six boxes never failed to split into rooms it could still solve, and one
+  // search over all of its boxes would only burn the budget: answer nothing rather than hunt.
+  if (level.boxes.length > 6) return '';
+  const whole = solvePushOptimal(level, SET_STATES);
   return whole === null ? '' : whole.moves;
 }
 
